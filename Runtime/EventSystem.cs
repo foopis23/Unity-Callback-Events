@@ -123,13 +123,15 @@ namespace CallbackEvents
             }
         }
 
-        public void FireEventAfter(EventContext EventContext, int ms) {
+        public void FireEventAfter(EventContext EventContext, int ms)
+        {
             IEnumerator coroutine = WaitFireEvent(EventContext, ms);
             StartCoroutine(coroutine);
         }
 
-        private IEnumerator WaitFireEvent(EventContext EventContext, float ms) {
-            yield return new WaitForSeconds(ms/1000.0f);
+        private IEnumerator WaitFireEvent(EventContext EventContext, float ms)
+        {
+            yield return new WaitForSeconds(ms / 1000.0f);
             System.Type trueEventContextClass = EventContext.GetType();
 
             if (eventListeners != null && eventListeners.ContainsKey(trueEventContextClass))
@@ -141,8 +143,20 @@ namespace CallbackEvents
             }
         }
 
+        public void CallbackAfter(System.Action callback, int ms)
+        {
+            StartCoroutine(WaitForCallback(callback, ms));
+        }
+
+        private IEnumerator WaitForCallback(System.Action callback, float ms)
+        {
+            yield return new WaitForSeconds(ms / 1000.0f);
+            callback();
+        }
+
         //this allows all events to run at the same time
-        public async Task AsyncFireEvent(EventContext EventContext) {
+        public async Task AsyncFireEvent(EventContext EventContext)
+        {
             System.Type trueEventContextClass = EventContext.GetType();
 
             if (asyncEventListeners == null || !asyncEventListeners.ContainsKey(trueEventContextClass))
