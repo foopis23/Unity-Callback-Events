@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2021-1-28
+## Added
+- FireEventAfter function to fire an event after a user specificied amount of time
+- AsyncFireEvent function to run all event listeners async for better performance and highly subscribed events 
+
 ## [1.0.2] - 2021-1-16
 
 ### Added
