@@ -1,5 +1,7 @@
 using UnityEngine;
+using System.Collections;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace CallbackEvents
 {
@@ -10,8 +12,11 @@ namespace CallbackEvents
     public class EventSystem : MonoBehaviour
     {
         //evenets
+        public delegate Task AsyncEvent<T>(T e);
         protected delegate void EventListener(EventContext e);
+        protected delegate Task AsyncEventListener(EventContext e);
         protected Dictionary<System.Type, List<EventListener>> eventListeners;
+        protected Dictionary<System.Type, List<AsyncEventListener>> asyncEventListeners;
 
         //filters
         public delegate T Filter<T>(T e);
@@ -70,6 +75,38 @@ namespace CallbackEvents
             return eventListeners.Remove(eventType);
         }
 
+        public void RegisterAsyncEventListener<T>(AsyncEvent<T> listener) where T : EventContext
+        {
+            System.Type eventType = typeof(T);
+            if (eventListeners == null)
+            {
+                asyncEventListeners = new Dictionary<System.Type, List<AsyncEventListener>>();
+            }
+
+            if (asyncEventListeners.ContainsKey(eventType) == false || asyncEventListeners[eventType] == null)
+            {
+                asyncEventListeners[eventType] = new List<AsyncEventListener>();
+            }
+
+            // Wrap a type converstion around the event listener
+            AsyncEventListener wrapper = (ei) => { return listener((T)ei); };
+
+            asyncEventListeners[eventType].Add(wrapper);
+        }
+
+        public bool UnregisterAsyncEventListener<T>(AsyncEvent<T> listener) where T : EventContext
+        {
+            System.Type eventType = typeof(T);
+
+            if (asyncEventListeners == null || asyncEventListeners.ContainsKey(eventType) == false || asyncEventListeners[eventType] == null)
+            {
+                return false;
+            }
+
+            return asyncEventListeners.Remove(eventType);
+        }
+
+
         public void FireEvent(EventContext EventContext)
         {
             System.Type trueEventContextClass = EventContext.GetType();
@@ -84,6 +121,44 @@ namespace CallbackEvents
             {
                 el(EventContext);
             }
+        }
+
+        public void FireEventAfter(EventContext EventContext, int ms) {
+            IEnumerator coroutine = WaitFireEvent(EventContext, ms);
+            StartCoroutine(coroutine);
+        }
+
+        private IEnumerator WaitFireEvent(EventContext EventContext, float ms) {
+            yield return new WaitForSeconds(ms/1000.0f);
+            System.Type trueEventContextClass = EventContext.GetType();
+
+            if (eventListeners != null && eventListeners.ContainsKey(trueEventContextClass))
+            {
+                foreach (EventListener el in eventListeners[trueEventContextClass])
+                {
+                    el(EventContext);
+                }
+            }
+        }
+
+        //this allows all events to run at the same time
+        public async Task AsyncFireEvent(EventContext EventContext) {
+            System.Type trueEventContextClass = EventContext.GetType();
+
+            if (asyncEventListeners == null || !asyncEventListeners.ContainsKey(trueEventContextClass))
+            {
+                // No one is listening, we are done.
+                return;
+            }
+
+            List<Task> eventTasks = new List<Task>();
+
+            foreach (AsyncEventListener el in asyncEventListeners[trueEventContextClass])
+            {
+                eventTasks.Add(el(EventContext));
+            }
+
+            await Task.WhenAll(eventTasks);
         }
 
         public void RegisterFilterListener<T>(Filter<T> listener) where T : EventContext
