@@ -131,7 +131,7 @@ namespace CallbackEvents
 
         private IEnumerator WaitFireEvent(EventContext EventContext, float ms)
         {
-            yield return new WaitForSeconds(ms / 1000.0f);
+            yield return new WaitForSecondsRealtime(ms / 1000.0f);
             System.Type trueEventContextClass = EventContext.GetType();
 
             if (eventListeners != null && eventListeners.ContainsKey(trueEventContextClass))
@@ -150,7 +150,7 @@ namespace CallbackEvents
 
         private IEnumerator WaitForCallback(System.Action callback, float ms)
         {
-            yield return new WaitForSeconds(ms / 1000.0f);
+            yield return new WaitForSecondsRealtime(ms / 1000.0f);
             callback();
         }
 
