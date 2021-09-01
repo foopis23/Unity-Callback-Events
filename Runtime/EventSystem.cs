@@ -26,6 +26,7 @@ namespace CallbackEvents
         
         //Debounce
         protected Dictionary<int, bool> DebounceCallbacks;
+        protected Dictionary<Type, bool> DebounceFireAfter;
 
 
         // Use this for initialization
@@ -134,13 +135,30 @@ namespace CallbackEvents
             }
         }
 
-        public void FireEventAfter(EventContext eventContext, int ms)
+        public void FireEventAfter(EventContext eventContext, int ms, bool debounce = false)
         {
-            var coroutine = WaitFireEvent(eventContext, ms);
+            if (debounce)
+            {
+                if (DebounceFireAfter == null) DebounceFireAfter = new Dictionary<Type, bool>();
+
+                var trueEventContextClass = eventContext.GetType();
+                if (DebounceFireAfter.ContainsKey(trueEventContextClass))
+                {
+                    if (DebounceFireAfter[trueEventContextClass]) return;
+
+                    DebounceFireAfter[trueEventContextClass] = true;
+                }
+                else
+                {
+                    DebounceFireAfter.Add(trueEventContextClass, true);
+                }
+            }
+            
+            var coroutine = WaitFireEvent(eventContext, ms, debounce);
             StartCoroutine(coroutine);
         }
 
-        private IEnumerator WaitFireEvent(EventContext eventContext, float ms)
+        private IEnumerator WaitFireEvent(EventContext eventContext, float ms, bool debounce)
         {
             yield return new WaitForSecondsRealtime(ms / 1000.0f);
             var trueEventContextClass = eventContext.GetType();
@@ -151,6 +169,11 @@ namespace CallbackEvents
             foreach (var key in keys)
             {
                 EventListeners[trueEventContextClass][key](eventContext);
+            }
+
+            if (debounce)
+            {
+                DebounceFireAfter[trueEventContextClass] = false;
             }
         }
 
@@ -163,27 +186,28 @@ namespace CallbackEvents
                 if (DebounceCallbacks.ContainsKey(callback.GetHashCode()))
                 {
                     if (DebounceCallbacks[callback.GetHashCode()]) return;
+                    
+                    DebounceCallbacks[callback.GetHashCode()] = true;
                 }
                 else
                 {
                     DebounceCallbacks.Add(callback.GetHashCode(), true);
                 }
-                
-                DebounceCallbacks[callback.GetHashCode()] = true;
             }
+            
             StartCoroutine(WaitForCallback(callback, ms, debounce));
         }
 
         private IEnumerator WaitForCallback(Action callback, float ms, bool debounce)
         {
             yield return new WaitForSecondsRealtime(ms / 1000.0f);
+
+            callback();
             
             if (debounce)
             {
                 DebounceCallbacks[callback.GetHashCode()] = false;
             }
-            
-            callback();
         }
 
         //this allows all events to run at the same time
