@@ -1,227 +1,242 @@
+using System;
 using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace CallbackEvents
 {
-    //test
     public abstract class EventContext { }
 
     [AddComponentMenu("Callback Event System")]
     public class EventSystem : MonoBehaviour
     {
         //evenets
-        public delegate Task AsyncEvent<T>(T e);
+        public delegate Task AsyncEvent<in T>(T e);
         protected delegate void EventListener(EventContext e);
         protected delegate Task AsyncEventListener(EventContext e);
-        protected Dictionary<System.Type, List<EventListener>> eventListeners;
-        protected Dictionary<System.Type, List<AsyncEventListener>> asyncEventListeners;
+        protected Dictionary<Type, Dictionary<int, EventListener>> EventListeners;
+        protected Dictionary<Type, Dictionary<int, AsyncEventListener>> AsyncEventListeners;
 
         //filters
         public delegate T Filter<T>(T e);
         protected delegate EventContext FilterListener(EventContext e);
-        protected Dictionary<System.Type, List<FilterListener>> filterListeners;
+        protected Dictionary<Type, Dictionary<int, FilterListener>> FilterListeners;
 
 
         // Use this for initialization
-        void Awake()
+        private void Awake()
         {
-            __Current = this;
+            _current = this;
         }
 
-        private static EventSystem __Current;
+        private static EventSystem _current;
         public static EventSystem Current
         {
             get
             {
-                if (__Current == null)
+                if (_current == null)
                 {
-                    __Current = GameObject.FindObjectOfType<EventSystem>();
+                    _current = FindObjectOfType<EventSystem>();
                 }
 
-                return __Current;
+                return _current;
             }
         }
 
-        public void RegisterEventListener<T>(System.Action<T> listener) where T : EventContext
+        public void RegisterEventListener<T>(Action<T> listener) where T : EventContext
         {
-            System.Type eventType = typeof(T);
-            if (eventListeners == null)
+            var eventType = typeof(T);
+            
+            if (EventListeners == null)
             {
-                eventListeners = new Dictionary<System.Type, List<EventListener>>();
+                EventListeners = new Dictionary<Type, Dictionary<int, EventListener>>();
             }
 
-            if (eventListeners.ContainsKey(eventType) == false || eventListeners[eventType] == null)
+            if (EventListeners.ContainsKey(eventType) == false || EventListeners[eventType] == null)
             {
-                eventListeners[eventType] = new List<EventListener>();
+                EventListeners[eventType] = new Dictionary<int, EventListener>();
             }
 
             // Wrap a type converstion around the event listener
-            EventListener wrapper = (ei) => { listener((T)ei); };
-
-            eventListeners[eventType].Add(wrapper);
+            void Wrapper(EventContext ei)
+            {
+                listener((T) ei);
+            }
+            EventListeners[eventType].Add(listener.GetHashCode(), Wrapper);
         }
 
-        public bool UnregisterEventListener<T>(System.Action<T> listener) where T : EventContext
+        public bool UnregisterEventListener<T>(Action<T> listener) where T : EventContext
         {
-            System.Type eventType = typeof(T);
+            var eventType = typeof(T);
 
-            if (eventListeners == null || eventListeners.ContainsKey(eventType) == false || eventListeners[eventType] == null)
+            if (EventListeners == null || EventListeners.ContainsKey(eventType) == false || EventListeners[eventType] == null)
             {
                 return false;
             }
 
-            return eventListeners.Remove(eventType);
+            return EventListeners[eventType].Remove(listener.GetHashCode());
         }
 
         public void RegisterAsyncEventListener<T>(AsyncEvent<T> listener) where T : EventContext
         {
-            System.Type eventType = typeof(T);
-            if (eventListeners == null)
+            var eventType = typeof(T);
+            if (EventListeners == null)
             {
-                asyncEventListeners = new Dictionary<System.Type, List<AsyncEventListener>>();
+                AsyncEventListeners = new Dictionary<Type, Dictionary<int, AsyncEventListener>>();
             }
 
-            if (asyncEventListeners.ContainsKey(eventType) == false || asyncEventListeners[eventType] == null)
+            if (AsyncEventListeners.ContainsKey(eventType) == false || AsyncEventListeners[eventType] == null)
             {
-                asyncEventListeners[eventType] = new List<AsyncEventListener>();
+                AsyncEventListeners[eventType] = new Dictionary<int, AsyncEventListener>();
             }
 
             // Wrap a type converstion around the event listener
-            AsyncEventListener wrapper = (ei) => { return listener((T)ei); };
+            Task Wrapper(EventContext ei)
+            {
+                return listener((T) ei);
+            }
 
-            asyncEventListeners[eventType].Add(wrapper);
+            AsyncEventListeners[eventType].Add(listener.GetHashCode(), Wrapper);
         }
 
         public bool UnregisterAsyncEventListener<T>(AsyncEvent<T> listener) where T : EventContext
         {
-            System.Type eventType = typeof(T);
+            var eventType = typeof(T);
 
-            if (asyncEventListeners == null || asyncEventListeners.ContainsKey(eventType) == false || asyncEventListeners[eventType] == null)
+            if (AsyncEventListeners == null || AsyncEventListeners.ContainsKey(eventType) == false || AsyncEventListeners[eventType] == null)
             {
                 return false;
             }
 
-            return asyncEventListeners.Remove(eventType);
+            return AsyncEventListeners[eventType].Remove(listener.GetHashCode());
         }
 
 
-        public void FireEvent(EventContext EventContext)
+        public void FireEvent(EventContext eventContext)
         {
-            System.Type trueEventContextClass = EventContext.GetType();
+            var trueEventContextClass = eventContext.GetType();
 
-            if (eventListeners == null || !eventListeners.ContainsKey(trueEventContextClass))
+            if (EventListeners == null || !EventListeners.ContainsKey(trueEventContextClass))
             {
                 // No one is listening, we are done.
                 return;
             }
 
-            foreach (EventListener el in eventListeners[trueEventContextClass])
+            var keys = EventListeners[trueEventContextClass].Keys.ToArray();
+            foreach (var key in keys)
             {
-                el(EventContext);
+                EventListeners[trueEventContextClass][key](eventContext);
             }
         }
 
-        public void FireEventAfter(EventContext EventContext, int ms)
+        public void FireEventAfter(EventContext eventContext, int ms)
         {
-            IEnumerator coroutine = WaitFireEvent(EventContext, ms);
+            var coroutine = WaitFireEvent(eventContext, ms);
             StartCoroutine(coroutine);
         }
 
-        private IEnumerator WaitFireEvent(EventContext EventContext, float ms)
+        private IEnumerator WaitFireEvent(EventContext eventContext, float ms)
         {
             yield return new WaitForSecondsRealtime(ms / 1000.0f);
-            System.Type trueEventContextClass = EventContext.GetType();
+            var trueEventContextClass = eventContext.GetType();
 
-            if (eventListeners != null && eventListeners.ContainsKey(trueEventContextClass))
+            if (EventListeners == null || !EventListeners.ContainsKey(trueEventContextClass)) yield break;
+            
+            var keys = EventListeners[trueEventContextClass].Keys.ToArray();
+            foreach (var key in keys)
             {
-                foreach (EventListener el in eventListeners[trueEventContextClass])
-                {
-                    el(EventContext);
-                }
+                EventListeners[trueEventContextClass][key](eventContext);
             }
         }
 
-        public void CallbackAfter(System.Action callback, int ms)
+        public void CallbackAfter(Action callback, int ms)
         {
             StartCoroutine(WaitForCallback(callback, ms));
         }
 
-        private IEnumerator WaitForCallback(System.Action callback, float ms)
+        private static IEnumerator WaitForCallback(Action callback, float ms)
         {
             yield return new WaitForSecondsRealtime(ms / 1000.0f);
             callback();
         }
 
         //this allows all events to run at the same time
-        public async Task AsyncFireEvent(EventContext EventContext)
+        public async Task AsyncFireEvent(EventContext eventContext)
         {
-            System.Type trueEventContextClass = EventContext.GetType();
+            var trueEventContextClass = eventContext.GetType();
 
-            if (asyncEventListeners == null || !asyncEventListeners.ContainsKey(trueEventContextClass))
+            if (AsyncEventListeners == null || !AsyncEventListeners.ContainsKey(trueEventContextClass))
             {
                 // No one is listening, we are done.
                 return;
             }
 
-            List<Task> eventTasks = new List<Task>();
-
-            foreach (AsyncEventListener el in asyncEventListeners[trueEventContextClass])
+            var eventTasks = new List<Task>();
+            
+            var keys = AsyncEventListeners[trueEventContextClass].Keys.ToArray();
+            
+            foreach (var key in keys)
             {
-                eventTasks.Add(el(EventContext));
+                eventTasks.Add(AsyncEventListeners[trueEventContextClass][key](eventContext));
             }
-
+            
             await Task.WhenAll(eventTasks);
         }
 
         public void RegisterFilterListener<T>(Filter<T> listener) where T : EventContext
         {
-            System.Type eventType = typeof(T);
-            if (filterListeners == null)
+            var eventType = typeof(T);
+            if (FilterListeners == null)
             {
-                filterListeners = new Dictionary<System.Type, List<FilterListener>>();
+                FilterListeners = new Dictionary<Type, Dictionary<int, FilterListener>>();
             }
 
-            if (filterListeners.ContainsKey(eventType) == false || filterListeners[eventType] == null)
+            if (FilterListeners.ContainsKey(eventType) == false || FilterListeners[eventType] == null)
             {
-                filterListeners[eventType] = new List<FilterListener>();
+                FilterListeners[eventType] = new Dictionary<int, FilterListener>();
             }
 
             // Wrap a type converstion around the event listener
-            FilterListener wrapper = (ei) => { return listener((T)ei); };
+            EventContext Wrapper(EventContext ei)
+            {
+                return listener((T) ei);
+            }
 
-            filterListeners[eventType].Add(wrapper);
+            FilterListeners[eventType].Add(listener.GetHashCode(), Wrapper);
         }
 
         public bool UnregisterFilterListener<T>(Filter<T> listener) where T : EventContext
         {
-            System.Type eventType = typeof(T);
+            var eventType = typeof(T);
 
-            if (eventListeners == null || eventListeners.ContainsKey(eventType) == false || eventListeners[eventType] == null)
+            if (FilterListeners == null || FilterListeners.ContainsKey(eventType) == false || FilterListeners[eventType] == null)
             {
                 return false;
             }
 
-            return eventListeners.Remove(eventType);
+            return FilterListeners[eventType].Remove(listener.GetHashCode());
         }
 
-        public T FireFilter<T>(EventContext EventContext) where T : EventContext
+        public T FireFilter<T>(EventContext eventContext) where T : EventContext
         {
-            System.Type trueEventContextClass = EventContext.GetType();
+            var trueEventContextClass = eventContext.GetType();
 
-            if (filterListeners == null || !filterListeners.ContainsKey(trueEventContextClass))
+            if (FilterListeners == null || !FilterListeners.ContainsKey(trueEventContextClass))
             {
                 // No one is listening, so input value is unmodified.
-                return (T)EventContext;
+                return (T)eventContext;
             }
 
-            foreach (FilterListener el in filterListeners[trueEventContextClass])
+            var keys = FilterListeners[trueEventContextClass].Keys.ToArray();
+            
+            foreach (var key in keys)
             {
-                EventContext = el(EventContext);
+                eventContext = FilterListeners[trueEventContextClass][key](eventContext);
             }
 
-            return (T)EventContext;
+            return (T)eventContext;
         }
     }
 }
