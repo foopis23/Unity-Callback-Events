@@ -7,6 +7,11 @@ using System.Threading.Tasks;
 
 namespace CallbackEvents
 {
+    public class MissingEventSystemException : Exception
+    {
+        public MissingEventSystemException() : base("Could not find Callback Event System in scene. Create an empty object and add the Callback Event System script.") {}
+    }
+    
     public abstract class EventContext { }
 
     [AddComponentMenu("Callback Event System")]
@@ -40,9 +45,13 @@ namespace CallbackEvents
         {
             get
             {
+                if (_current != null) return _current;
+                
+                _current = FindObjectOfType<EventSystem>();
+
                 if (_current == null)
                 {
-                    _current = FindObjectOfType<EventSystem>();
+                    throw new MissingEventSystemException();
                 }
 
                 return _current;
