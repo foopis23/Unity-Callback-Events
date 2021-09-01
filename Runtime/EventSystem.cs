@@ -23,6 +23,9 @@ namespace CallbackEvents
         public delegate T Filter<T>(T e);
         protected delegate EventContext FilterListener(EventContext e);
         protected Dictionary<Type, Dictionary<int, FilterListener>> FilterListeners;
+        
+        //Debounce
+        protected Dictionary<int, bool> DebounceCallbacks;
 
 
         // Use this for initialization
@@ -151,14 +154,35 @@ namespace CallbackEvents
             }
         }
 
-        public void CallbackAfter(Action callback, int ms)
+        public void CallbackAfter(Action callback, int ms, bool debounce = false)
         {
-            StartCoroutine(WaitForCallback(callback, ms));
+            if (debounce)
+            {
+                if (DebounceCallbacks == null) DebounceCallbacks = new Dictionary<int, bool>();
+                
+                if (DebounceCallbacks.ContainsKey(callback.GetHashCode()))
+                {
+                    if (DebounceCallbacks[callback.GetHashCode()]) return;
+                }
+                else
+                {
+                    DebounceCallbacks.Add(callback.GetHashCode(), true);
+                }
+                
+                DebounceCallbacks[callback.GetHashCode()] = true;
+            }
+            StartCoroutine(WaitForCallback(callback, ms, debounce));
         }
 
-        private static IEnumerator WaitForCallback(Action callback, float ms)
+        private IEnumerator WaitForCallback(Action callback, float ms, bool debounce)
         {
             yield return new WaitForSecondsRealtime(ms / 1000.0f);
+            
+            if (debounce)
+            {
+                DebounceCallbacks[callback.GetHashCode()] = false;
+            }
+            
             callback();
         }
 
