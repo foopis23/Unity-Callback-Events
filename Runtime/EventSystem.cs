@@ -7,27 +7,46 @@ using System.Threading.Tasks;
 
 namespace CallbackEvents
 {
+    // event delegates
+    public delegate void EventListener(EventContext e);
+    
+    // async delegates
+    public delegate Task AsyncEvent<in T>(T e);
+    public delegate Task AsyncEventListener(EventContext e);
+    
+    // filter Delegates
+    public delegate T Filter<T>(T e);
+    public delegate EventContext FilterListener(EventContext e);
+    
+    public struct FilterWrapper
+    {
+        public int Priority;
+        public FilterListener Listener;
+    } 
+    
+    public class MissingEventSystemException : Exception
+    {
+        public MissingEventSystemException() : base("Could not find Callback Event System in scene. Create an empty object and add the Callback Event System script.") {}
+    }
+    
     public abstract class EventContext { }
+
 
     [AddComponentMenu("Callback Event System")]
     public class EventSystem : MonoBehaviour
     {
-        //evenets
-        public delegate Task AsyncEvent<in T>(T e);
-        protected delegate void EventListener(EventContext e);
-        protected delegate Task AsyncEventListener(EventContext e);
+        // events
         protected Dictionary<Type, Dictionary<int, EventListener>> EventListeners;
-        protected Dictionary<Type, Dictionary<int, AsyncEventListener>> AsyncEventListeners;
-
-        //filters
-        public delegate T Filter<T>(T e);
-        protected delegate EventContext FilterListener(EventContext e);
-        protected Dictionary<Type, Dictionary<int, FilterListener>> FilterListeners;
         
-        //Debounce
+        // debounce
         protected Dictionary<int, bool> DebounceCallbacks;
         protected Dictionary<Type, bool> DebounceFireAfter;
+        
+        // async events
+        protected Dictionary<Type, Dictionary<int, AsyncEventListener>> AsyncEventListeners;
 
+        // filters
+        protected Dictionary<Type, Dictionary<int, FilterWrapper>> FilterListeners;
 
         // Use this for initialization
         private void Awake()
@@ -40,9 +59,13 @@ namespace CallbackEvents
         {
             get
             {
+                if (_current != null) return _current;
+                
+                _current = FindObjectOfType<EventSystem>();
+
                 if (_current == null)
                 {
-                    _current = FindObjectOfType<EventSystem>();
+                    throw new MissingEventSystemException();
                 }
 
                 return _current;
@@ -118,7 +141,7 @@ namespace CallbackEvents
         }
 
 
-        public void FireEvent(EventContext eventContext)
+        public void FireEvent(EventContext eventContext, int maxCallbackPerFrame = 0)
         {
             var trueEventContextClass = eventContext.GetType();
 
@@ -128,14 +151,37 @@ namespace CallbackEvents
                 return;
             }
 
-            var keys = EventListeners[trueEventContextClass].Keys.ToArray();
-            foreach (var key in keys)
+            if (maxCallbackPerFrame < 1 || EventListeners[trueEventContextClass].Count < maxCallbackPerFrame)
             {
-                EventListeners[trueEventContextClass][key](eventContext);
+                var keys = EventListeners[trueEventContextClass].Keys.ToArray();
+                foreach (var key in keys)
+                {
+                    EventListeners[trueEventContextClass][key](eventContext);
+                }
+            }
+            else
+            {
+                var coroutine = FireEventsThrottled(eventContext, trueEventContextClass, maxCallbackPerFrame);
+                StartCoroutine(coroutine);
             }
         }
 
-        public void FireEventAfter(EventContext eventContext, int ms, bool debounce = false)
+        private IEnumerator FireEventsThrottled(EventContext eventContext, Type trueEventContextClass, int maxCallbackPerFrame)
+        {
+            var keys = EventListeners[trueEventContextClass].Keys.ToArray();
+            for (var i=0; i < keys.Length; i++)
+            {
+                var key = keys[i];
+                EventListeners[trueEventContextClass][key](eventContext);
+
+                if (i != 0 && i % maxCallbackPerFrame == 0)
+                {
+                    yield return null;
+                }
+            }
+        }
+
+        public void FireEventAfter(EventContext eventContext, int ms, bool debounce = false, int maxCallbackPerFrame = 0)
         {
             if (debounce)
             {
@@ -154,11 +200,11 @@ namespace CallbackEvents
                 }
             }
             
-            var coroutine = WaitFireEvent(eventContext, ms, debounce);
+            var coroutine = WaitFireEvent(eventContext, ms, debounce, maxCallbackPerFrame);
             StartCoroutine(coroutine);
         }
 
-        private IEnumerator WaitFireEvent(EventContext eventContext, float ms, bool debounce)
+        private IEnumerator WaitFireEvent(EventContext eventContext, float ms, bool debounce, int maxCallbackPerFrame)
         {
             yield return new WaitForSecondsRealtime(ms / 1000.0f);
             var trueEventContextClass = eventContext.GetType();
@@ -166,9 +212,15 @@ namespace CallbackEvents
             if (EventListeners == null || !EventListeners.ContainsKey(trueEventContextClass)) yield break;
             
             var keys = EventListeners[trueEventContextClass].Keys.ToArray();
-            foreach (var key in keys)
+            for (var i=0; i < keys.Length; i++)
             {
+                var key = keys[i];
                 EventListeners[trueEventContextClass][key](eventContext);
+
+                if (maxCallbackPerFrame > 0 && i != 0 && i % maxCallbackPerFrame == 0)
+                {
+                    yield return null;
+                }
             }
 
             if (debounce)
@@ -233,17 +285,17 @@ namespace CallbackEvents
             await Task.WhenAll(eventTasks);
         }
 
-        public void RegisterFilterListener<T>(Filter<T> listener) where T : EventContext
+        public void RegisterFilterListener<T>(Filter<T> listener, int priority = 0) where T : EventContext
         {
             var eventType = typeof(T);
             if (FilterListeners == null)
             {
-                FilterListeners = new Dictionary<Type, Dictionary<int, FilterListener>>();
+                FilterListeners = new Dictionary<Type, Dictionary<int, FilterWrapper>>();
             }
 
             if (FilterListeners.ContainsKey(eventType) == false || FilterListeners[eventType] == null)
             {
-                FilterListeners[eventType] = new Dictionary<int, FilterListener>();
+                FilterListeners[eventType] = new Dictionary<int, FilterWrapper>();
             }
 
             // Wrap a type converstion around the event listener
@@ -252,7 +304,11 @@ namespace CallbackEvents
                 return listener((T) ei);
             }
 
-            FilterListeners[eventType].Add(listener.GetHashCode(), Wrapper);
+            FilterListeners[eventType].Add(listener.GetHashCode(), new FilterWrapper()
+            {
+                Listener = Wrapper,
+                Priority = priority
+            });
         }
 
         public bool UnregisterFilterListener<T>(Filter<T> listener) where T : EventContext
@@ -263,7 +319,7 @@ namespace CallbackEvents
             {
                 return false;
             }
-
+            
             return FilterListeners[eventType].Remove(listener.GetHashCode());
         }
 
@@ -277,11 +333,20 @@ namespace CallbackEvents
                 return (T)eventContext;
             }
 
-            var keys = FilterListeners[trueEventContextClass].Keys.ToArray();
-            
-            foreach (var key in keys)
+            // TODO: Find a data structure that sorts on insert but doesn't change the computation time of unregister
+            var values = FilterListeners[trueEventContextClass].Values.ToList();
+
+            values.Sort(delegate(FilterWrapper a, FilterWrapper b)
             {
-                eventContext = FilterListeners[trueEventContextClass][key](eventContext);
+                var diff = b.Priority - a.Priority;
+                if (diff == 0) return 0;
+                else if (diff < 0) return -1;
+                else return 1;
+            });
+
+            foreach (var value in values)
+            {
+                eventContext = value.Listener(eventContext);
             }
 
             return (T)eventContext;
