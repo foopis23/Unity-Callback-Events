@@ -4,6 +4,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using JetBrains.Annotations;
 
 namespace CallbackEvents
 {
@@ -181,13 +182,15 @@ namespace CallbackEvents
             }
         }
 
+        [CanBeNull]
         public Action FireEventAfter(EventContext eventContext, int ms, bool debounce = false, int maxCallbackPerFrame = 0)
         {
+            var trueEventContextClass = eventContext.GetType();
+            
             if (debounce)
             {
                 if (DebounceFireAfter == null) DebounceFireAfter = new Dictionary<Type, bool>();
-
-                var trueEventContextClass = eventContext.GetType();
+                
                 if (DebounceFireAfter.ContainsKey(trueEventContextClass))
                 {
                     if (DebounceFireAfter[trueEventContextClass]) return null;
@@ -200,8 +203,8 @@ namespace CallbackEvents
                 }
             }
             
-            var coroutine = WaitFireEvent(eventContext, ms, debounce, maxCallbackPerFrame);
-            StartCoroutine(coroutine);
+            var enumerator = WaitFireEvent(eventContext, ms, debounce, maxCallbackPerFrame);
+            var coroutine = StartCoroutine(enumerator);
 
             return () => {
                 StopCoroutine(coroutine);
@@ -211,7 +214,7 @@ namespace CallbackEvents
                 }
             };
         }
-
+        
         private IEnumerator WaitFireEvent(EventContext eventContext, float ms, bool debounce, int maxCallbackPerFrame)
         {
             yield return new WaitForSecondsRealtime(ms / 1000.0f);
@@ -237,6 +240,7 @@ namespace CallbackEvents
             }
         }
 
+        [CanBeNull]
         public Action CallbackAfter(Action callback, int ms, bool debounce = false)
         {
             if (debounce)
@@ -255,10 +259,10 @@ namespace CallbackEvents
                 }
             }
             
-            StartCoroutine(WaitForCallback(callback, ms, debounce));
+            var coroutine = StartCoroutine(WaitForCallback(callback, ms, debounce));
 
             return () => {
-                StopCoroutine(WaitForCallback(callback, ms, debounce));
+                StopCoroutine(coroutine);
                 if (debounce)
                 {
                     DebounceCallbacks[callback.GetHashCode()] = false;
