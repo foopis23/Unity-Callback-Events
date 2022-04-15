@@ -181,7 +181,7 @@ namespace CallbackEvents
             }
         }
 
-        public void FireEventAfter(EventContext eventContext, int ms, bool debounce = false, int maxCallbackPerFrame = 0)
+        public Action FireEventAfter(EventContext eventContext, int ms, bool debounce = false, int maxCallbackPerFrame = 0)
         {
             if (debounce)
             {
@@ -190,7 +190,7 @@ namespace CallbackEvents
                 var trueEventContextClass = eventContext.GetType();
                 if (DebounceFireAfter.ContainsKey(trueEventContextClass))
                 {
-                    if (DebounceFireAfter[trueEventContextClass]) return;
+                    if (DebounceFireAfter[trueEventContextClass]) return null;
 
                     DebounceFireAfter[trueEventContextClass] = true;
                 }
@@ -202,6 +202,14 @@ namespace CallbackEvents
             
             var coroutine = WaitFireEvent(eventContext, ms, debounce, maxCallbackPerFrame);
             StartCoroutine(coroutine);
+
+            return () => {
+                StopCoroutine(coroutine);
+                if (debounce)
+                {
+                    DebounceFireAfter[trueEventContextClass] = false;
+                }
+            };
         }
 
         private IEnumerator WaitFireEvent(EventContext eventContext, float ms, bool debounce, int maxCallbackPerFrame)
@@ -229,7 +237,7 @@ namespace CallbackEvents
             }
         }
 
-        public void CallbackAfter(Action callback, int ms, bool debounce = false)
+        public Action CallbackAfter(Action callback, int ms, bool debounce = false)
         {
             if (debounce)
             {
@@ -237,7 +245,7 @@ namespace CallbackEvents
                 
                 if (DebounceCallbacks.ContainsKey(callback.GetHashCode()))
                 {
-                    if (DebounceCallbacks[callback.GetHashCode()]) return;
+                    if (DebounceCallbacks[callback.GetHashCode()]) return null;
                     
                     DebounceCallbacks[callback.GetHashCode()] = true;
                 }
@@ -248,6 +256,14 @@ namespace CallbackEvents
             }
             
             StartCoroutine(WaitForCallback(callback, ms, debounce));
+
+            return () => {
+                StopCoroutine(WaitForCallback(callback, ms, debounce));
+                if (debounce)
+                {
+                    DebounceCallbacks[callback.GetHashCode()] = false;
+                }
+            };
         }
 
         private IEnumerator WaitForCallback(Action callback, float ms, bool debounce)
