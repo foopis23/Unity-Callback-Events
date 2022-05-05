@@ -9,7 +9,6 @@ This system was created using
 https://github.com/quill18/UnityCallbackAndEventTutorial as starting point.
 
 ## Getting Started
-- [Quick Start](https://github.com/foopis23/Unity-Callback-Events/wiki/Quick-Start)
 - [API Reference](https://github.com/foopis23/Unity-Callback-Events/wiki/API-Reference)
 ## Concepts
 ### Event
